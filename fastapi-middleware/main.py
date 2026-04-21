@@ -40,10 +40,97 @@ INJECTION_PATTERNS = [
 
 # PII — données personnelles à masquer avant envoi au LLM
 PII_PATTERNS = {
-    "email":       (r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",  "[EMAIL_REDACTED]"),
-    "phone":       (r"\b(\+33|0)[1-9](\s?\d{2}){4}\b",                        "[PHONE_REDACTED]"),
-    "credit_card": (r"\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b",           "[CARD_REDACTED]"),
-    "ssn":         (r"\b\d{3}-\d{2}-\d{4}\b",                                 "[SSN_REDACTED]"),
+    # ── Contact ───────────────────────────────────────────────────────────────
+    "email": (
+        r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
+        "[EMAIL_REDACTED]",
+    ),
+    "phone_fr": (
+        r"\b(\+33|0)[1-9](\s?\d{2}){4}\b",
+        "[PHONE_REDACTED]",
+    ),
+    "phone_intl": (
+        r"\+\d{1,3}[\s.-]?\(?\d{1,4}\)?[\s.-]?\d{1,4}[\s.-]?\d{1,9}\b",
+        "[PHONE_REDACTED]",
+    ),
+
+    # ── Paiement ──────────────────────────────────────────────────────────────
+    # IBAN avant credit_card — sinon le pattern carte grignote les chiffres de l'IBAN
+    "iban": (
+        r"\b[A-Z]{2}\d{2}[\s]?(\d{4}[\s]?){4,7}\d{1,4}\b",
+        "[IBAN_REDACTED]",
+    ),
+    "credit_card": (
+        r"\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b",
+        "[CARD_REDACTED]",
+    ),
+    "cvv": (
+        r"\b(cvv|cvc|csc|cryptogramme)[\s:]*\d{3,4}\b",
+        "[CVV_REDACTED]",
+    ),
+
+    # ── Identité ──────────────────────────────────────────────────────────────
+    "ssn_us": (
+        r"\b\d{3}-\d{2}-\d{4}\b",
+        "[SSN_REDACTED]",
+    ),
+    "nss_fr": (
+        # Numéro de sécu français : 1 ou 2 + 12 chiffres
+        r"\b[12]\s?\d{2}\s?\d{2}\s?\d{2}\s?\d{3}\s?\d{3}\s?\d{2}\b",
+        "[NSS_REDACTED]",
+    ),
+    "passport": (
+        r"\b[A-Z]{2}\d{7}\b",
+        "[PASSPORT_REDACTED]",
+    ),
+    "driving_license_fr": (
+        r"\b\d{2}[A-Z]{2}\d{5}\b",
+        "[LICENSE_REDACTED]",
+    ),
+
+    # ── Adresse & localisation ────────────────────────────────────────────────
+    "zip_code_fr": (
+        r"\b(0[1-9]|[1-8]\d|9[0-5])\d{3}\b",
+        "[ZIPCODE_REDACTED]",
+    ),
+    "ip_address": (
+        r"\b(\d{1,3}\.){3}\d{1,3}\b",
+        "[IP_REDACTED]",
+    ),
+    "mac_address": (
+        r"\b([0-9A-Fa-f]{2}[:\-]){5}[0-9A-Fa-f]{2}\b",
+        "[MAC_REDACTED]",
+    ),
+
+    # ── Entreprise ────────────────────────────────────────────────────────────
+    "siret": (
+        r"\b\d{3}\s?\d{3}\s?\d{3}\s?\d{5}\b",
+        "[SIRET_REDACTED]",
+    ),
+    "siren": (
+        r"\b\d{3}\s?\d{3}\s?\d{3}\b",
+        "[SIREN_REDACTED]",
+    ),
+
+    # ── Credentials ───────────────────────────────────────────────────────────
+    "api_key_pattern": (
+        r"\b(sk|pk|api|key|token)[-_][A-Za-z0-9]{20,}\b",
+        "[API_KEY_REDACTED]",
+    ),
+    "jwt_token": (
+        r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b",
+        "[JWT_REDACTED]",
+    ),
+    "password_inline": (
+        r"\b(password|passwd|mdp|mot\s?de\s?passe)[\s:=]+\S+",
+        "[PASSWORD_REDACTED]",
+    ),
+
+    # ── Dates sensibles ───────────────────────────────────────────────────────
+    "date_birth": (
+        r"\b(n[ée]e?|naissance|born|dob|date\s?de\s?naissance)[\s:,]+(le\s+|la\s+|du\s+)?\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}\b",
+        "[DOB_REDACTED]",
+    ),
 }
 
 # ── Clients AWS (initialisés au démarrage) ────────────────────────────────────
