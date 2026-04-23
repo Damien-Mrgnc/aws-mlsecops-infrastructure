@@ -1,0 +1,51 @@
+# Règles de review — aws-mlsecops-infrastructure
+# Lues par ai-reviewer à chaque Pull Request.
+
+## Contexte du projet
+API Gateway MLSecOps : reverse proxy Go + middleware FastAPI sécurisant les appels vers un LLM (OpenAI).
+Stack : Go 1.25, Python 3.11, Terraform, AWS ECS Fargate, DynamoDB, WAF, Secrets Manager.
+
+## Règles de sécurité (priorité haute)
+
+### Secrets & credentials
+- Aucune clé API, token, mot de passe ou credential ne doit apparaître en clair dans le code ou les logs.
+- Les secrets doivent être lus depuis AWS Secrets Manager (prod) ou des variables d'environnement (local).
+- Vérifier que les variables d'environnement sensibles ne sont pas loggées.
+
+### Prompt Injection & LLM
+- Tout message utilisateur doit passer par la détection d'injection avant d'atteindre le LLM.
+- Les patterns de détection ne doivent pas être contournables par simple changement de casse ou encodage.
+- Le system prompt ne doit jamais être exposé dans les réponses API.
+
+### Masquage PII
+- Les données personnelles (email, téléphone, IBAN, numéro de carte, etc.) doivent être masquées avant envoi au LLM.
+- Vérifier que les nouveaux patterns PII n'entrent pas en conflit avec les patterns existants (ordre important).
+- Le champ `pii_masked` doit être `true` dès qu'au moins un pattern est détecté.
+
+### Authentification & autorisation
+- Chaque endpoint (sauf /health) doit vérifier la clé API via le header `X-API-Key`.
+- Les clés API doivent être hashées (SHA-256) avant tout stockage ou log.
+- Le rate limiting doit être appliqué par clé API, pas par IP.
+
+### Infrastructure Terraform
+- Aucune ressource ne doit ouvrir un port inutile (principe du moindre privilège réseau).
+- Les IAM policies doivent être scopées à des ressources spécifiques (pas de `Resource: "*"`).
+- Tout `checkov:skip` doit avoir une justification explicite dans le commentaire.
+- Les secrets Terraform (`tfvars`) ne doivent jamais être commités.
+
+## Règles de qualité de code
+
+### Go (go-proxy)
+- Les erreurs doivent être gérées explicitement, pas ignorées avec `_`.
+- Les goroutines doivent avoir une gestion propre de leur cycle de vie.
+- Les tests doivent couvrir les cas nominaux ET les cas d'erreur.
+
+### Python (fastapi-middleware)
+- Les dépendances doivent avoir des versions fixées dans `requirements.txt`.
+- Les appels async doivent utiliser `await`, pas `asyncio.run()` imbriqué.
+- Bandit ne doit remonter aucune alerte de niveau HIGH.
+
+### Général
+- Pas de `TODO` ou `FIXME` dans le code mergé sur main.
+- Les logs ne doivent pas contenir de données utilisateur en clair.
+- Les Dockerfiles doivent utiliser des images slim/alpine et ne pas tourner en root.
