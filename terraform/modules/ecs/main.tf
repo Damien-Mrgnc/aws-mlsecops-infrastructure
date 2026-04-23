@@ -1,24 +1,40 @@
+# ── ECR ───────────────────────────────────────────────────────────────────────
+
 resource "aws_ecr_repository" "go_proxy" {
-  name                 = "${var.project_name}-go-proxy"
-  image_tag_mutability = "MUTABLE"
+  name = "${var.project_name}-go-proxy"
+  # IMMUTABLE : empêche l'écrasement d'un tag existant (CKV_AWS_51)
+  image_tag_mutability = "IMMUTABLE"
   image_scanning_configuration {
     scan_on_push = true
   }
+  # KMS désactivé : utilise le chiffrement AES-256 par défaut d'AWS, suffisant pour démo
+  #checkov:skip=CKV_AWS_136:Chiffrement AES-256 par défaut activé, KMS CMK ajouté en prod
 }
 
 resource "aws_ecr_repository" "fastapi" {
   name                 = "${var.project_name}-fastapi"
-  image_tag_mutability = "MUTABLE"
+  image_tag_mutability = "IMMUTABLE"
   image_scanning_configuration {
     scan_on_push = true
   }
+  #checkov:skip=CKV_AWS_136:Chiffrement AES-256 par défaut activé, KMS CMK ajouté en prod
 }
+
+# ── ECS Cluster ───────────────────────────────────────────────────────────────
 
 resource "aws_ecs_cluster" "main" {
   name = "${var.project_name}-cluster"
+
+  # Container Insights : métriques CPU/mémoire par container dans CloudWatch (CKV_AWS_65)
+  setting {
+    name  = "containerInsights"
+    value = "enabled"
+  }
 }
 
-# IAM Role d'exécution — permet à ECS de puller les images ECR et écrire les logs CloudWatch
+# ── IAM Roles ─────────────────────────────────────────────────────────────────
+
+# Rôle d'exécution — permet à ECS de puller les images ECR et écrire les logs CloudWatch
 resource "aws_iam_role" "ecs_task_execution" {
   name = "${var.project_name}-ecs-execution-role"
   assume_role_policy = jsonencode({
@@ -36,7 +52,7 @@ resource "aws_iam_role_policy_attachment" "ecs_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-# IAM Role de la task — moindre privilège : DynamoDB + Secrets Manager uniquement
+# Rôle de la task — moindre privilège : DynamoDB + Secrets Manager uniquement
 resource "aws_iam_role" "ecs_task" {
   name = "${var.project_name}-ecs-task-role"
   assume_role_policy = jsonencode({
@@ -73,15 +89,23 @@ resource "aws_iam_role_policy" "ecs_task_policy" {
   })
 }
 
+# ── CloudWatch Log Groups ─────────────────────────────────────────────────────
+
 resource "aws_cloudwatch_log_group" "fastapi" {
-  name              = "/ecs/${var.project_name}/fastapi"
-  retention_in_days = 7
+  name = "/ecs/${var.project_name}/fastapi"
+  # 365 jours minimum requis par Checkov (CKV_AWS_338)
+  retention_in_days = 365
+  # KMS désactivé : chiffrement AES-256 par défaut, KMS CMK ajouté en prod
+  #checkov:skip=CKV_AWS_158:Chiffrement AES-256 par défaut activé, KMS CMK ajouté en prod
 }
 
 resource "aws_cloudwatch_log_group" "go_proxy" {
   name              = "/ecs/${var.project_name}/go-proxy"
-  retention_in_days = 7
+  retention_in_days = 365
+  #checkov:skip=CKV_AWS_158:Chiffrement AES-256 par défaut activé, KMS CMK ajouté en prod
 }
+
+# ── ECS Task Definition ───────────────────────────────────────────────────────
 
 resource "aws_ecs_task_definition" "main" {
   family                   = "${var.project_name}-task"
@@ -97,6 +121,8 @@ resource "aws_ecs_task_definition" "main" {
       name      = "fastapi"
       image     = "${aws_ecr_repository.fastapi.repository_url}:latest"
       essential = true
+      # Système de fichiers racine en lecture seule (CKV_AWS_336)
+      readonlyRootFilesystem = true
       portMappings = [{ containerPort = 8000 }]
       environment = [
         { name = "AWS_REGION",     value = var.aws_region },
@@ -115,6 +141,7 @@ resource "aws_ecs_task_definition" "main" {
       name      = "go-proxy"
       image     = "${aws_ecr_repository.go_proxy.repository_url}:latest"
       essential = true
+      readonlyRootFilesystem = true
       portMappings = [{ containerPort = 8080 }]
       environment = [
         { name = "FASTAPI_URL",    value = "http://localhost:8000" },
@@ -133,6 +160,8 @@ resource "aws_ecs_task_definition" "main" {
     }
   ])
 }
+
+# ── ECS Service ───────────────────────────────────────────────────────────────
 
 resource "aws_ecs_service" "main" {
   name            = "${var.project_name}-service"

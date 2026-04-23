@@ -186,7 +186,11 @@ async def lifespan(app: FastAPI):
     if not openai_key:
         log.warning("Aucune clé OpenAI configurée — les appels LLM échoueront")
 
-    openai_client = AsyncOpenAI(api_key=openai_key)
+    base_url = os.getenv("OPENAI_BASE_URL")
+    openai_client = AsyncOpenAI(
+        api_key=openai_key,
+        **({"base_url": base_url} if base_url else {}),
+    )
     dynamodb_table = _init_dynamodb()
 
     log.info("FastAPI démarrée (LOCAL_MODE=%s)", LOCAL_MODE)
