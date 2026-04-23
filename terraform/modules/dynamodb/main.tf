@@ -24,5 +24,13 @@ resource "aws_dynamodb_table" "audit" {
     enabled        = true
   }
 
+  # Point-in-time recovery : restauration possible à n'importe quel instant (CKV_AWS_28)
+  point_in_time_recovery {
+    enabled = true
+  }
+
+  # KMS désactivé : chiffrement AES-256 par défaut activé sur DynamoDB, KMS CMK ajouté en prod
+  #checkov:skip=CKV_AWS_119:Chiffrement AES-256 par défaut activé, KMS CMK ajouté en prod
+
   tags = { Name = "${var.project_name}-audit" }
 }

@@ -1,0 +1,77 @@
+services:
+
+  # ── DynamoDB Local ─────────────────────────────────────────────────────────
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    container_name: dynamodb-local
+    ports:
+      - "8001:8000"
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-inMemory"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/ || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── Mock LLM (API OpenAI-compatible) ──────────────────────────────────────
+  mock-llm:
+    build: ./mock-llm
+    container_name: mock-llm
+    ports:
+      - "8002:8002"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8002/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── FastAPI Middleware ─────────────────────────────────────────────────────
+  fastapi:
+    build: ./fastapi-middleware
+    container_name: fastapi
+    ports:
+      - "8000:8000"
+    environment:
+      LOCAL_MODE: "true"
+      OPENAI_API_KEY: "mock-key"
+      OPENAI_BASE_URL: "http://mock-llm:8002/v1"
+      VALID_API_KEYS: "test-key-1,test-key-2"
+      DYNAMODB_TABLE: "mlsecops-audit"
+      AWS_REGION: "us-east-1"
+      # Credentials fictives pour boto3 en local
+      AWS_ACCESS_KEY_ID: "local"
+      AWS_SECRET_ACCESS_KEY: "local"
+      DYNAMODB_ENDPOINT: "http://dynamodb-local:8001"
+    depends_on:
+      dynamodb-local:
+        condition: service_healthy
+      mock-llm:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── Go Proxy ───────────────────────────────────────────────────────────────
+  go-proxy:
+    build: ./go-proxy
+    container_name: go-proxy
+    ports:
+      - "8080:8080"
+    environment:
+      LOCAL_MODE: "true"
+      FASTAPI_URL: "http://fastapi:8000"
+      DYNAMODB_TABLE: "mlsecops-audit"
+      PROXY_PORT: "8080"
+      AWS_REGION: "us-east-1"
+      AWS_ACCESS_KEY_ID: "local"
+      AWS_SECRET_ACCESS_KEY: "local"
+    depends_on:
+      fastapi:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
