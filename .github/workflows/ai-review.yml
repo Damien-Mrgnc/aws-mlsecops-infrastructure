@@ -2,68 +2,38 @@ name: AI Code Review
 
 on:
   pull_request:
-    types: [opened, synchronize]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
 
 jobs:
   ai-review:
-    name: AI Security Review
+    name: MLSecOps AI Review
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout du repo cible (ce repo)
+        uses: actions/checkout@v4
+
+      - name: Checkout de l'agent de review
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          repository: Damien-Mrgnc/mlsecops-ai-reviewer
+          path: _reviewer
 
-      - name: Get PR diff
-        id: diff
-        run: |
-          git diff origin/${{ github.base_ref }}...HEAD > pr_diff.txt
-          echo "diff_size=$(wc -l < pr_diff.txt)" >> $GITHUB_OUTPUT
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-      - name: AI Review via ai-reviewer
-        # Nécessite OPENAI_API_KEY et GH_TOKEN configurés dans les secrets
-        continue-on-error: true
+      - name: Installer les dépendances
+        run: pip install -r _reviewer/reviewer/requirements.txt
+
+      - name: Lancer l'agent
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          REPO: ${{ github.repository }}
-        run: |
-          pip install openai requests
-          python - <<'EOF'
-          import os, requests
-          from openai import OpenAI
-
-          client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-
-          with open("pr_diff.txt") as f:
-              diff = f.read()[:8000]  # Limite à 8k chars
-
-          response = client.chat.completions.create(
-              model="gpt-4o-mini",
-              messages=[
-                  {
-                      "role": "system",
-                      "content": (
-                          "Tu es un expert en sécurité MLSecOps. "
-                          "Analyse ce diff de PR et identifie : "
-                          "1) Vulnérabilités de sécurité (injection, secrets exposés, etc.) "
-                          "2) Problèmes spécifiques aux APIs LLM (prompt injection, PII) "
-                          "3) Points positifs. "
-                          "Sois concis et actionnable."
-                      ),
-                  },
-                  {"role": "user", "content": f"Diff de la PR :\n\n{diff}"},
-              ],
-          )
-
-          review = response.choices[0].message.content
-
-          # Poste le review en commentaire sur la PR
-          headers = {
-              "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
-              "Accept": "application/vnd.github+json",
-          }
-          url = f"https://api.github.com/repos/{os.environ['REPO']}/issues/{os.environ['PR_NUMBER']}/comments"
-          requests.post(url, json={"body": f"## AI Security Review\n\n{review}"}, headers=headers)
-          print(review)
-          EOF
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+        run: python _reviewer/reviewer/agent.py
