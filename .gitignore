@@ -23,3 +23,7 @@ venv/
 # Go
 go-proxy/proxy
 go-proxy/proxy.exe
+go-proxy/go-proxy.exe
+
+# Terraform plan binaire (peut contenir des valeurs sensibles)
+terraform/tfplan

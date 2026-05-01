@@ -201,8 +201,9 @@ resource "aws_lb" "main" {
 
   # Rejette les requêtes HTTP avec des headers malformés (CKV_AWS_131)
   drop_invalid_header_fields = true
-  # Empêche la suppression accidentelle de l'ALB (CKV_AWS_150)
-  enable_deletion_protection = true
+  # Désactivé pour faciliter le cleanup après démo portfolio
+  enable_deletion_protection = false
+  #checkov:skip=CKV_AWS_150:Démo portfolio — suppression manuelle autorisée
 
   # Access logs désactivés : nécessite un bucket S3 dédié, hors scope démo
   #checkov:skip=CKV_AWS_91:Access logs nécessitent un bucket S3 dédié, activé en prod
@@ -231,20 +232,17 @@ resource "aws_lb_target_group" "main" {
   }
 }
 
-# Listener port 80 : redirige vers HTTPS (CKV2_AWS_20)
+# Listener port 80 : forward HTTP direct vers le target group (démo sans domaine/cert)
+# Note: En prod, remplacer par HTTPS avec ACM + redirect HTTP→HTTPS
 resource "aws_lb_listener" "http_redirect" {
   load_balancer_arn = aws_lb.main.arn
   port              = 80
   protocol          = "HTTP"
 
-  #checkov:skip=CKV_AWS_2:Ce listener redirige vers HTTPS, il n'est pas lui-même HTTPS
-  #checkov:skip=CKV_AWS_103:TLS configuré sur le listener HTTPS, pas sur le redirect HTTP
+  #checkov:skip=CKV_AWS_2:Démo portfolio sans domaine — HTTPS ajouté en prod avec ACM
+  #checkov:skip=CKV_AWS_103:TLS en prod avec ACM, hors scope démo
   default_action {
-    type = "redirect"
-    redirect {
-      port        = "443"
-      protocol    = "HTTPS"
-      status_code = "HTTP_301"
-    }
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.main.arn
   }
 }
