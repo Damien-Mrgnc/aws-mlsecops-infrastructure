@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -32,11 +33,14 @@ var injectionPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)forget\s+everything`),
 }
 
-// ── Rate limiting par clé API (en mémoire) ───────────────────────────────────
+// ── Rate limiting par clé API et par IP (en mémoire) ────────────────────────
 
 var (
 	limiters   = make(map[string]*rate.Limiter)
 	limitersMu sync.Mutex
+
+	ipLimiters   = make(map[string]*rate.Limiter)
+	ipLimitersMu sync.Mutex
 )
 
 func getLimiter(apiKey string) *rate.Limiter {
@@ -49,6 +53,29 @@ func getLimiter(apiKey string) *rate.Limiter {
 	l := rate.NewLimiter(rate.Limit(10), 20)
 	limiters[apiKey] = l
 	return l
+}
+
+func getIPLimiter(ip string) *rate.Limiter {
+	ipLimitersMu.Lock()
+	defer ipLimitersMu.Unlock()
+	if l, ok := ipLimiters[ip]; ok {
+		return l
+	}
+	// 30 requêtes/seconde par IP, burst de 50
+	l := rate.NewLimiter(rate.Limit(30), 50)
+	ipLimiters[ip] = l
+	return l
+}
+
+func clientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		return xff
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }
 
 // ── Utilitaires ──────────────────────────────────────────────────────────────
@@ -139,6 +166,13 @@ func main() {
 
 	// ── Handler principal ──────────────────────────────────────────────────
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// 0. Rate limiting par IP (avant toute auth)
+		ip := clientIP(r)
+		if !getIPLimiter(ip).Allow() {
+			writeJSON(w, http.StatusTooManyRequests, `{"error":"ip rate limit exceeded"}`)
+			return
+		}
+
 		// 1. Vérification de la clé API
 		apiKey := r.Header.Get("X-API-Key")
 		if apiKey == "" {
